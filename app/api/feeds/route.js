@@ -1,14 +1,14 @@
 import RSSParser from "rss-parser";
 
 const FEEDS = [
-  { name: "Chronicle of Philanthropy", url: "https://www.philanthropy.com/feed" },
-  { name: "Inside Higher Ed", url: "https://www.insidehighered.com/feed" },
-  { name: "University Business", url: "https://universitybusiness.com/feed/" },
-  { name: "Inside Philanthropy", url: "https://www.insidephilanthropy.com/home?format=rss" },
-  { name: "CCS Fundraising", url: "https://www.ccsfundraising.com/insights/feed/" },
-  { name: "CASE", url: "https://www.case.org/feed" },
-  { name: "Annual Giving Network", url: "https://www.annualgivingnetwork.com/feed/" },
-  { name: "F&P Magazine", url: "https://fandp.com.au/feed/" },
+  { name: "Chronicle of Philanthropy", url: "https://www.philanthropy.com/feed/", domain: "philanthropy.com" },
+  { name: "Inside Higher Ed", url: "https://rss.app/feeds/4h9FUHQBWF9cEsTe.xml", domain: "insidehighered.com" },
+  { name: "University Business", url: "https://universitybusiness.com/feed/", domain: "universitybusiness.com" },
+  { name: "Inside Philanthropy", url: "https://www.insidephilanthropy.com/home?format=rss", domain: "insidephilanthropy.com" },
+  { name: "CASE", url: "https://rss.app/feeds/V87InOfgvGACpCS1.xml", domain: "case.org" },
+  { name: "CCS Fundraising", url: "https://www.ccsfundraising.com/insights/feed/", domain: "ccsfundraising.com" },
+  { name: "Annual Giving Network", url: "https://www.annualgivingnetwork.com/feed/", domain: "annualgivingnetwork.com" },
+  { name: "F&P Magazine", url: "https://rss.app/feeds/QnbheyDbIBY7BNDN.xml", domain: "fandp.com.au" },
 ];
 
 export const revalidate = 3600; // Cache results for 1 hour
