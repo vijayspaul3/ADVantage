@@ -16,7 +16,7 @@ const DELAY_BETWEEN_BATCHES_MS = 5000;
 export async function POST(request) {
   const apiKey = process.env.GEMINI_API_KEY;
 
-  if (!apiKey || apiKey === "your_gemini_api_key_here") {
+  if (!apiKey || apiKey === AIzaSyDOHwKzxsOH8UJfncx4JL-srRTEYyoxgE4) {
     return Response.json(
       { error: "Gemini API key not configured" },
       { status: 500 }
