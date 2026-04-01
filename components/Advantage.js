@@ -36,6 +36,64 @@ const TOPICS = [
   },
 ];
 
+/* ─── KEYWORD HELPERS (fallback when Gemini is unavailable) ─── */
+const TOPIC_KEYWORDS = {
+  philanthropy: [
+    "philanthropy","philanthropic","giving","fundraising","fundraiser",
+    "donation","donate","donor","donors","gift","gifts","charitable",
+    "endowment","pledge","campaign","capital campaign","annual fund",
+    "major gift","planned giving","stewardship","generosity","benefactor",
+    "grant","grants","grantmaking",
+  ],
+  engagement: [
+    "alumni","alumnus","alumna","engagement","engage","volunteer",
+    "volunteering","mentoring","mentor","networking","community",
+    "outreach","reunion","homecoming","connect","connection",
+    "involvement","participate","participation","relationship",
+    "constituency","stakeholder","advocate","advocacy",
+  ],
+  innovation: [
+    "technology","innovation","innovative","digital","ai",
+    "artificial intelligence","data","analytics","system","platform",
+    "software","automation","automate","process","transform",
+    "transformation","disruption","disruptive","emerging",
+    "machine learning","crm","database","tech","modernize","upgrade",
+  ],
+  awards: [
+    "award","awards","recognition","recognize","honor","honours",
+    "prize","excellence","achievement","distinguished","ceremony",
+    "accolade","winner","recipient","medal","scholarship","fellowship",
+    "inducted","hall of fame","laureate","outstanding","celebrate",
+  ],
+  events: [
+    "event","events","conference","conferences","summit","symposium",
+    "workshop","webinar","gala","forum","seminar","gathering",
+    "convocation","commencement","ceremony","session","meeting",
+    "annual meeting","congress","expo","exhibition","registration",
+    "attend","speaker","keynote","panel",
+  ],
+};
+
+function tagArticleByKeywords(title, description) {
+  const text = `${title} ${description}`.toLowerCase();
+  const matched = TOPICS.filter((t) =>
+    (TOPIC_KEYWORDS[t.id] || []).some((kw) => text.includes(kw))
+  );
+  return matched.length > 0 ? matched : [TOPICS[0]];
+}
+
+function truncate(text, wordLimit = 60) {
+  if (!text) return "";
+  const clean = text
+    .replace(/<[^>]*>/g, "")
+    .replace(/&[^;]+;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const words = clean.split(" ");
+  if (words.length <= wordLimit) return clean;
+  return words.slice(0, wordLimit).join(" ") + "…";
+}
+
 /* ─── HELPERS ─── */
 function timeSince(dateStr) {
   if (!dateStr) return "";
@@ -243,15 +301,17 @@ export default function Advantage() {
     return () => clearInterval(interval);
   }, [loading]);
 
-  /* ── Fetch RSS then curate with Gemini ── */
+  /* ── Fetch RSS then curate with Gemini (with fallback) ── */
   useEffect(() => {
     async function load() {
       setLoading(true);
 
+      let feedData;
+
       try {
         // Step 1: Fetch articles from RSS feeds
         const feedResp = await fetch("/api/feeds");
-        const feedData = await feedResp.json();
+        feedData = await feedResp.json();
 
         if (!feedData.articles || feedData.articles.length === 0) {
           setStatusMsg("No articles found — check feed URLs");
@@ -262,7 +322,7 @@ export default function Advantage() {
         const successFeeds = feedData.feeds.filter((f) => f.status === "ok");
         setFeedCount(successFeeds.length);
 
-        // Step 2: Send to Gemini for summarization + relevance check
+        // Step 2: Try Gemini for summarization + relevance check
         setLoadingStep(2);
         setStatusMsg(LOADING_MESSAGES[2]);
 
@@ -279,19 +339,16 @@ export default function Advantage() {
         });
 
         if (!sumResp.ok) {
-          // Gemini failed entirely — show nothing rather than unvetted content
-          setStatusMsg("Could not curate articles — please try again later");
-          setArticles([]);
-          setLoading(false);
+          // Gemini failed — use fallback
+          applyFallback(feedData, successFeeds.length);
           return;
         }
 
         const sumData = await sumResp.json();
 
         if (!sumData.results || sumData.results.length === 0) {
-          setStatusMsg("No relevant articles found");
-          setArticles([]);
-          setLoading(false);
+          // Gemini returned nothing — use fallback
+          applyFallback(feedData, successFeeds.length);
           return;
         }
 
@@ -320,17 +377,36 @@ export default function Advantage() {
           });
         });
 
-        setArticles(curated);
-        setStatusMsg(
-          curated.length > 0
-            ? `${successFeeds.length} sources · AI-curated`
-            : "No relevant articles found"
-        );
+        if (curated.length > 0) {
+          setArticles(curated);
+          setStatusMsg(`${successFeeds.length} sources · AI-curated`);
+        } else {
+          // Gemini marked everything as irrelevant — use fallback
+          applyFallback(feedData, successFeeds.length);
+        }
       } catch (err) {
-        setStatusMsg("Something went wrong — please refresh");
-        setArticles([]);
+        // Network or other error — try fallback if we have feed data
+        if (feedData && feedData.articles && feedData.articles.length > 0) {
+          const successFeeds = (feedData.feeds || []).filter((f) => f.status === "ok");
+          applyFallback(feedData, successFeeds.length);
+        } else {
+          setStatusMsg("Something went wrong — please refresh");
+          setArticles([]);
+        }
       }
 
+      setLoading(false);
+    }
+
+    function applyFallback(feedData, feedCount) {
+      // Use keyword-based tagging and truncated descriptions
+      const fallbackArticles = feedData.articles.map((a) => ({
+        ...a,
+        _summary: truncate(a.description),
+        _topics: tagArticleByKeywords(a.title, a.description),
+      }));
+      setArticles(fallbackArticles);
+      setStatusMsg(`${feedCount} sources · keyword-tagged`);
       setLoading(false);
     }
 
