@@ -8,6 +8,11 @@ const TOPICS = [
   "Events (conferences, summits, workshops, webinars, galas, forums, seminars)",
 ];
 
+// Limit articles sent to Gemini to stay within free tier (15 requests/min)
+const MAX_ARTICLES = 50;
+const BATCH_SIZE = 10;
+const DELAY_BETWEEN_BATCHES_MS = 5000;
+
 export async function POST(request) {
   const apiKey = process.env.GEMINI_API_KEY;
 
@@ -28,12 +33,13 @@ export async function POST(request) {
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
-    // Process articles in batches of 5 for efficiency
-    const batchSize = 5;
+    // Limit to most recent articles to stay within rate limits
+    // With 50 articles at batch size 10 = only 5 API calls
+    const limitedArticles = articles.slice(0, MAX_ARTICLES);
     const results = [];
 
-    for (let i = 0; i < articles.length; i += batchSize) {
-      const batch = articles.slice(i, i + batchSize);
+    for (let i = 0; i < limitedArticles.length; i += BATCH_SIZE) {
+      const batch = limitedArticles.slice(i, i + BATCH_SIZE);
 
       const prompt = `You are a content curator for university advancement professionals (people who work in fundraising, alumni relations, donor engagement, and institutional advancement at universities and colleges).
 
@@ -88,7 +94,7 @@ Respond with JSON array only:`;
           });
         }
       } catch (batchErr) {
-        // If a batch fails, mark all as not relevant (they won't be shown)
+        // If a batch fails, mark all as not relevant
         batch.forEach((_, idx) => {
           results.push({
             originalIndex: i + idx,
@@ -99,9 +105,9 @@ Respond with JSON array only:`;
         });
       }
 
-      // Small delay between batches to respect rate limits
-      if (i + batchSize < articles.length) {
-        await new Promise((r) => setTimeout(r, 500));
+      // Wait between batches to respect the 15 requests/min free tier limit
+      if (i + BATCH_SIZE < limitedArticles.length) {
+        await new Promise((r) => setTimeout(r, DELAY_BETWEEN_BATCHES_MS));
       }
     }
 
