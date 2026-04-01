@@ -10,7 +10,7 @@ const FEEDS = [
   { name: "Annual Giving Network", url: "https://www.annualgivingnetwork.com/feed/", domain: "annualgivingnetwork.com" },
   { name: "F&P Magazine", url: "https://rss.app/feeds/QnbheyDbIBY7BNDN.xml", domain: "fandp.com.au" },
   { name: "Philanthropy Australia", url: "https://www.philanthropy.org.au/news-and-stories/?format=rss", domain: "philanthropy.org.au" },
-{ name: "Times Higher Education", url: "https://rss.app/feeds/1bxxKLdB6jjvspDy.xml", domain: "timeshighereducation.com" },
+  { name: "Times Higher Education", url: "https://rss.app/feeds/1bxxKLdB6jjvspDy.xml", domain: "timeshighereducation.com" }
 ];
 
 // Titles that indicate placeholder/non-article pages
