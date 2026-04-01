@@ -111,8 +111,34 @@ function timeSince(dateStr) {
   });
 }
 
+/* ─── READ TRACKING ─── */
+function getReadArticles() {
+  try {
+    const stored = localStorage.getItem("advantage_read");
+    if (!stored) return {};
+    const parsed = JSON.parse(stored);
+    // Clean out entries older than 30 days to prevent unbounded growth
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const cleaned = {};
+    for (const [key, timestamp] of Object.entries(parsed)) {
+      if (timestamp > cutoff) cleaned[key] = timestamp;
+    }
+    return cleaned;
+  } catch {
+    return {};
+  }
+}
+
+function markAsRead(articleLink) {
+  try {
+    const current = getReadArticles();
+    current[articleLink] = Date.now();
+    localStorage.setItem("advantage_read", JSON.stringify(current));
+  } catch {}
+}
+
 /* ─── CARD COMPONENT ─── */
-function ArticleCard({ article, isActive, index, total }) {
+function ArticleCard({ article, isActive, index, total, isRead }) {
   const topics = article._topics || [];
 
   return (
@@ -129,24 +155,43 @@ function ArticleCard({ article, isActive, index, total }) {
     >
       <div
         style={{
-          background: "#FFFFFF",
+          background: isRead ? "#F7F6F3" : "#FFFFFF",
           borderRadius: "16px",
-          border: "1px solid #E8E6E1",
+          border: isRead ? "1px solid #EDEBE6" : "1px solid #E8E6E1",
           maxWidth: "520px",
           width: "100%",
           padding: "32px 28px",
           boxShadow: isActive
             ? "0 8px 32px rgba(0,0,0,0.06)"
             : "0 2px 8px rgba(0,0,0,0.03)",
-          transition: "box-shadow 0.3s ease, transform 0.3s ease",
+          transition: "box-shadow 0.3s ease, transform 0.3s ease, opacity 0.3s ease",
           transform: isActive ? "scale(1)" : "scale(0.97)",
+          opacity: isRead ? 0.7 : 1,
           display: "flex",
           flexDirection: "column",
           gap: "16px",
           maxHeight: "calc(100% - 20px)",
           overflow: "hidden",
+          position: "relative",
         }}
       >
+        {/* Read indicator */}
+        {isRead && (
+          <span
+            style={{
+              position: "absolute",
+              top: "12px",
+              right: "12px",
+              fontSize: "10px",
+              fontWeight: 600,
+              color: "#B0ACA6",
+              letterSpacing: "0.05em",
+              textTransform: "uppercase",
+            }}
+          >
+            Read
+          </span>
+        )}
         {/* Source & time */}
         <div
           style={{
@@ -286,7 +331,13 @@ export default function Advantage() {
   const [statusMsg, setStatusMsg] = useState(LOADING_MESSAGES[0]);
   const [loadingStep, setLoadingStep] = useState(0);
   const [feedCount, setFeedCount] = useState(0);
+  const [readArticles, setReadArticles] = useState({});
   const scrollRef = useRef(null);
+
+  /* ── Load read history from localStorage ── */
+  useEffect(() => {
+    setReadArticles(getReadArticles());
+  }, []);
 
   /* ── Rotate loading messages ── */
   useEffect(() => {
@@ -425,14 +476,32 @@ export default function Advantage() {
   useEffect(() => {
     setActiveIndex(0);
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
-  }, [activeFilter]);
+    // Mark the first article as read
+    if (filtered[0] && filtered[0].link) {
+      markAsRead(filtered[0].link);
+      setReadArticles((prev) => ({
+        ...prev,
+        [filtered[0].link]: Date.now(),
+      }));
+    }
+  }, [activeFilter, filtered.length]);
 
-  /* ── Track active card on scroll ── */
+  /* ── Track active card on scroll & mark as read ── */
   const handleScroll = useCallback(() => {
     if (!scrollRef.current) return;
     const c = scrollRef.current;
-    setActiveIndex(Math.round(c.scrollTop / c.clientHeight));
-  }, []);
+    const idx = Math.round(c.scrollTop / c.clientHeight);
+    setActiveIndex(idx);
+
+    // Mark the current article as read
+    if (filtered[idx] && filtered[idx].link) {
+      markAsRead(filtered[idx].link);
+      setReadArticles((prev) => ({
+        ...prev,
+        [filtered[idx].link]: Date.now(),
+      }));
+    }
+  }, [filtered]);
 
   /* ── Keyboard navigation ── */
   const navigateTo = useCallback(
@@ -445,8 +514,17 @@ export default function Advantage() {
           : Math.max(activeIndex - 1, 0);
       c.scrollTo({ top: newIdx * c.clientHeight, behavior: "smooth" });
       setActiveIndex(newIdx);
+
+      // Mark as read
+      if (filtered[newIdx] && filtered[newIdx].link) {
+        markAsRead(filtered[newIdx].link);
+        setReadArticles((prev) => ({
+          ...prev,
+          [filtered[newIdx].link]: Date.now(),
+        }));
+      }
     },
-    [activeIndex, filtered.length]
+    [activeIndex, filtered]
   );
 
   useEffect(() => {
@@ -544,7 +622,11 @@ export default function Advantage() {
         <span style={{ fontSize: "11px", color: "#B0ACA6" }}>
           {loading
             ? statusMsg
-            : `${filtered.length} article${filtered.length !== 1 ? "s" : ""} · ${statusMsg}`}
+            : (() => {
+                const unreadCount = filtered.filter((a) => !readArticles[a.link]).length;
+                const unreadLabel = unreadCount > 0 ? ` · ${unreadCount} new` : "";
+                return `${filtered.length} article${filtered.length !== 1 ? "s" : ""}${unreadLabel} · ${statusMsg}`;
+              })()}
         </span>
       </div>
 
@@ -632,6 +714,7 @@ export default function Advantage() {
               <ArticleCard
                 article={article}
                 isActive={i === activeIndex}
+                isRead={!!readArticles[article.link]}
                 index={i}
                 total={filtered.length}
               />
@@ -654,27 +737,41 @@ export default function Advantage() {
             zIndex: 10,
           }}
         >
-          {filtered.slice(0, 20).map((_, i) => (
-            <div
-              key={i}
-              onClick={() => {
-                if (!scrollRef.current) return;
-                scrollRef.current.scrollTo({
-                  top: i * scrollRef.current.clientHeight,
-                  behavior: "smooth",
-                });
-                setActiveIndex(i);
-              }}
-              style={{
-                width: i === activeIndex ? "8px" : "5px",
-                height: i === activeIndex ? "8px" : "5px",
-                borderRadius: "50%",
-                background: i === activeIndex ? "#2A6B5E" : "#D0CCC6",
-                cursor: "pointer",
-                transition: "all 0.2s ease",
-              }}
-            />
-          ))}
+          {filtered.slice(0, 20).map((article, i) => {
+            const dotIsRead = !!readArticles[article.link];
+            return (
+              <div
+                key={i}
+                onClick={() => {
+                  if (!scrollRef.current) return;
+                  scrollRef.current.scrollTo({
+                    top: i * scrollRef.current.clientHeight,
+                    behavior: "smooth",
+                  });
+                  setActiveIndex(i);
+                  if (article.link) {
+                    markAsRead(article.link);
+                    setReadArticles((prev) => ({
+                      ...prev,
+                      [article.link]: Date.now(),
+                    }));
+                  }
+                }}
+                style={{
+                  width: i === activeIndex ? "8px" : "5px",
+                  height: i === activeIndex ? "8px" : "5px",
+                  borderRadius: "50%",
+                  background: i === activeIndex
+                    ? "#2A6B5E"
+                    : dotIsRead
+                      ? "#E8E6E1"
+                      : "#D0CCC6",
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                }}
+              />
+            );
+          })}
         </div>
       )}
 
