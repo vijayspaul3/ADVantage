@@ -1,94 +1,102 @@
-import RSSParser from "rss-parser";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const FEEDS = [
-  { name: "Chronicle of Philanthropy", url: "https://www.philanthropy.com/feed/" },
-  { name: "Inside Higher Ed", url: "https://www.insidehighered.com/rss.xml" },
-  { name: "University Business", url: "https://universitybusiness.com/feed/" },
-  { name: "Inside Philanthropy", url: "https://www.insidephilanthropy.com/home?format=rss" },
-  { name: "CASE", url: "https://rss.app/feeds/V87InOfgvGACpCS1.xml" },
-  { name: "CCS Fundraising", url: "https://www.ccsfundraising.com/insights/feed/" },
-  { name: "Annual Giving Network", url: "https://www.annualgivingnetwork.com/feed/" },
-  { name: "F&P Magazine", url: "https://fandp.com.au/feed/" },
+const TOPICS = [
+  "Philanthropy (giving, fundraising, donations, donor relations, endowments, grants)",
+  "Engagement (alumni engagement, volunteer activities, mentoring, networking, community outreach)",
+  "Innovation (technology, AI, data analytics, digital transformation, systems, processes)",
+  "Awards (recognition, honors, prizes, excellence, achievements, ceremonies)",
+  "Events (conferences, summits, workshops, webinars, galas, forums, seminars)",
 ];
 
-// Titles that indicate placeholder/non-article pages
-const PLACEHOLDER_TITLE_PATTERNS = [
-  /^home$/i, /^about/i, /^contact/i, /^subscribe/i, /^sign up/i,
-  /^log\s?in/i, /^register/i, /^privacy/i, /^terms/i, /^cookie/i,
-  /^disclaimer/i, /^advertise/i, /^careers/i, /^jobs$/i, /^faq/i,
-  /^search$/i, /^archive/i, /^tag:/i, /^category:/i, /^page \d/i,
-  /^untitled/i, /^test/i, /^sample/i, /^draft/i, /^placeholder/i,
-  /^menu$/i, /^navigation$/i, /^sidebar$/i, /^footer$/i, /^header$/i,
-  /^404/i, /^error/i, /^not found/i, /^coming soon/i,
-  /^sponsored content$/i, /^advertisement$/i, /^partner content$/i,
-];
+export async function POST(request) {
+  const apiKey = process.env.GEMINI_API_KEY;
 
-const MIN_DESCRIPTION_WORDS = 20;
+  if (!apiKey || apiKey === "your_gemini_api_key_here") {
+    return Response.json(
+      { error: "Gemini API key not configured" },
+      { status: 500 }
+    );
+  }
 
-function isPlaceholderPage(title, description) {
-  const trimmedTitle = (title || "").trim();
+  try {
+    const { articles } = await request.json();
 
-  // No title = not a real article
-  if (!trimmedTitle) return true;
-
-  // Title matches a known placeholder pattern
-  if (PLACEHOLDER_TITLE_PATTERNS.some((p) => p.test(trimmedTitle))) return true;
-
-  // Description is too short or empty — likely not a real article
-  const cleanDesc = (description || "")
-    .replace(/<[^>]*>/g, "")
-    .replace(/&[^;]+;/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  const wordCount = cleanDesc ? cleanDesc.split(" ").length : 0;
-  if (wordCount < MIN_DESCRIPTION_WORDS) return true;
-
-  return false;
-}
-
-export const revalidate = 3600; // Cache results for 1 hour
-
-export async function GET() {
-  const parser = new RSSParser({
-    timeout: 10000,
-    headers: {
-      "User-Agent": "Advantage/1.0 (News Aggregator)",
-      Accept: "application/rss+xml, application/xml, text/xml",
-    },
-  });
-
-  const allArticles = [];
-  const feedResults = [];
-
-  const promises = FEEDS.map(async (feed) => {
-    try {
-      const data = await parser.parseURL(feed.url);
-      const items = (data.items || [])
-        .slice(0, 15)
-        .map((item) => ({
-          title: item.title || "",
-          description: item.contentSnippet || item.content || item.summary || "",
-          link: item.link || "",
-          pubDate: item.pubDate || item.isoDate || "",
-          source: feed.name,
-        }))
-        .filter((item) => !isPlaceholderPage(item.title, item.description));
-
-      allArticles.push(...items);
-      feedResults.push({ name: feed.name, status: "ok", count: items.length });
-    } catch (err) {
-      feedResults.push({ name: feed.name, status: "error", error: err.message });
+    if (!articles || !Array.isArray(articles) || articles.length === 0) {
+      return Response.json({ error: "No articles provided" }, { status: 400 });
     }
-  });
 
-  await Promise.allSettled(promises);
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
-  // Sort by date, newest first
-  allArticles.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+    // Process articles in batches of 5 for efficiency
+    const batchSize = 5;
+    const results = [];
 
-  return Response.json({
-    articles: allArticles,
-    feeds: feedResults,
-    fetchedAt: new Date().toISOString(),
-  });
+    for (let i = 0; i < articles.length; i += batchSize) {
+      const batch = articles.slice(i, i + batchSize);
+
+      const prompt = `You are an assistant for university advancement professionals. For each article below, provide:
+1. A clear, informative summary in 50-60 words that highlights why it matters to university advancement professionals (fundraising, alumni relations, institutional advancement).
+2. One or more topic tags from this list: ${TOPICS.map((t) => t.split(" (")[0]).join(", ")}
+
+Respond ONLY with a valid JSON array. No markdown, no backticks, no extra text. Each element should have "index" (number), "summary" (string), and "topics" (array of strings).
+
+Articles:
+${batch
+  .map(
+    (a, idx) => `
+[Article ${i + idx}]
+Title: ${a.title}
+Content: ${(a.description || "").substring(0, 800)}
+Source: ${a.source}
+`
+  )
+  .join("\n")}
+
+Respond with JSON array only:`;
+
+      try {
+        const result = await model.generateContent(prompt);
+        const text = result.response.text();
+
+        // Clean and parse the response
+        const cleaned = text
+          .replace(/```json\s*/gi, "")
+          .replace(/```\s*/g, "")
+          .trim();
+        const parsed = JSON.parse(cleaned);
+
+        if (Array.isArray(parsed)) {
+          parsed.forEach((item, idx) => {
+            results.push({
+              originalIndex: i + idx,
+              summary: item.summary || "",
+              topics: item.topics || [],
+            });
+          });
+        }
+      } catch (batchErr) {
+        // If a batch fails, add empty results so we can fall back
+        batch.forEach((_, idx) => {
+          results.push({
+            originalIndex: i + idx,
+            summary: "",
+            topics: [],
+          });
+        });
+      }
+
+      // Small delay between batches to respect rate limits
+      if (i + batchSize < articles.length) {
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    }
+
+    return Response.json({ results });
+  } catch (err) {
+    return Response.json(
+      { error: "Summarization failed: " + err.message },
+      { status: 500 }
+    );
+  }
 }
