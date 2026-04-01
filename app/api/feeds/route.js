@@ -3,7 +3,6 @@ import RSSParser from "rss-parser";
 const FEEDS = [
   { name: "Chronicle of Philanthropy", url: "https://www.philanthropy.com/feed/", domain: "philanthropy.com" },
   { name: "Inside Higher Ed", url: "https://rss.app/feeds/4h9FUHQBWF9cEsTe.xml", domain: "insidehighered.com" },
-  { name: "University Business", url: "https://universitybusiness.com/feed/", domain: "universitybusiness.com" },
   { name: "Inside Philanthropy", url: "https://www.insidephilanthropy.com/home?format=rss", domain: "insidephilanthropy.com" },
   { name: "CASE", url: "https://rss.app/feeds/V87InOfgvGACpCS1.xml", domain: "case.org" },
   { name: "CCS Fundraising", url: "https://www.ccsfundraising.com/insights/feed/", domain: "ccsfundraising.com" },
