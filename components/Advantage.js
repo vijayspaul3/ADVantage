@@ -297,7 +297,7 @@ export default function Advantage() {
         setStatusMsg(LOADING_MESSAGES[next]);
         return next;
       });
-    }, 3000);
+    }, 5000);
     return () => clearInterval(interval);
   }, [loading]);
 
@@ -576,7 +576,7 @@ export default function Advantage() {
               {statusMsg}
             </p>
             <p style={{ fontSize: "11px", color: "#B0ACA6" }}>
-              This usually takes 5–10 seconds
+              This usually takes 15–30 seconds
             </p>
           </div>
           {/* Progress dots */}
