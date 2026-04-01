@@ -9,88 +9,34 @@ const TOPICS = [
     label: "Philanthropy",
     color: "#2A6B5E",
     bg: "#E8F5F0",
-    keywords: [
-      "philanthropy","philanthropic","giving","fundraising","fundraiser",
-      "donation","donate","donor","donors","gift","gifts","charitable",
-      "endowment","pledge","campaign","capital campaign","annual fund",
-      "major gift","planned giving","stewardship","gratitude","generosity",
-      "benefactor","grant","grants","grantmaking",
-    ],
   },
   {
     id: "engagement",
     label: "Engagement",
     color: "#5B4A9E",
     bg: "#EEEAF7",
-    keywords: [
-      "alumni","alumnus","alumna","engagement","engage","volunteer",
-      "volunteering","mentoring","mentor","networking","community",
-      "outreach","reunion","homecoming","connect","connection",
-      "involvement","participate","participation","relationship",
-      "constituency","stakeholder","advocate","advocacy",
-    ],
   },
   {
     id: "innovation",
     label: "Innovation",
     color: "#B8860B",
     bg: "#FFF8E7",
-    keywords: [
-      "technology","innovation","innovative","digital","ai",
-      "artificial intelligence","data","analytics","system","platform",
-      "software","automation","automate","process","transform",
-      "transformation","disruption","disruptive","startup","emerging",
-      "machine learning","crm","database","tech","modernize","upgrade",
-    ],
   },
   {
     id: "awards",
     label: "Awards",
     color: "#C0392B",
     bg: "#FDECEA",
-    keywords: [
-      "award","awards","recognition","recognize","honor","honours",
-      "prize","excellence","achievement","distinguished","ceremony",
-      "accolade","winner","recipient","medal","scholarship","fellowship",
-      "inducted","hall of fame","laureate","outstanding","celebrate",
-    ],
   },
   {
     id: "events",
     label: "Events",
     color: "#2874A6",
     bg: "#E8F0FE",
-    keywords: [
-      "event","events","conference","conferences","summit","symposium",
-      "workshop","webinar","gala","forum","seminar","gathering",
-      "convocation","commencement","ceremony","session","meeting",
-      "annual meeting","congress","expo","exhibition","registration",
-      "attend","speaker","keynote","panel",
-    ],
   },
 ];
 
 /* ─── HELPERS ─── */
-function tagArticle(title, description) {
-  const text = `${title} ${description}`.toLowerCase();
-  const matched = TOPICS.filter((t) =>
-    t.keywords.some((kw) => text.includes(kw))
-  );
-  return matched.length > 0 ? matched : [TOPICS[0]];
-}
-
-function truncate(text, wordLimit = 60) {
-  if (!text) return "";
-  const clean = text
-    .replace(/<[^>]*>/g, "")
-    .replace(/&[^;]+;/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  const words = clean.split(" ");
-  if (words.length <= wordLimit) return clean;
-  return words.slice(0, wordLimit).join(" ") + "…";
-}
-
 function timeSince(dateStr) {
   if (!dateStr) return "";
   const seconds = Math.floor((new Date() - new Date(dateStr)) / 1000);
@@ -109,8 +55,7 @@ function timeSince(dateStr) {
 
 /* ─── CARD COMPONENT ─── */
 function ArticleCard({ article, isActive, index, total }) {
-  const topics = article._topics || tagArticle(article.title, article.description);
-  const summary = article._summary || truncate(article.description);
+  const topics = article._topics || [];
 
   return (
     <div
@@ -184,24 +129,26 @@ function ArticleCard({ article, isActive, index, total }) {
         </h2>
 
         {/* Topic pills */}
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-          {topics.map((t) => (
-            <span
-              key={t.id}
-              style={{
-                fontSize: "11px",
-                fontWeight: 600,
-                padding: "4px 10px",
-                borderRadius: "100px",
-                background: t.bg,
-                color: t.color,
-                letterSpacing: "0.02em",
-              }}
-            >
-              {t.label}
-            </span>
-          ))}
-        </div>
+        {topics.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+            {topics.map((t) => (
+              <span
+                key={t.id}
+                style={{
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  padding: "4px 10px",
+                  borderRadius: "100px",
+                  background: t.bg,
+                  color: t.color,
+                  letterSpacing: "0.02em",
+                }}
+              >
+                {t.label}
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* Summary */}
         <p
@@ -213,7 +160,7 @@ function ArticleCard({ article, isActive, index, total }) {
             flexGrow: 1,
           }}
         >
-          {summary}
+          {article._summary}
         </p>
 
         {/* Footer */}
@@ -263,111 +210,132 @@ function ArticleCard({ article, isActive, index, total }) {
   );
 }
 
+/* ─── LOADING MESSAGES ─── */
+const LOADING_MESSAGES = [
+  "Fetching feeds…",
+  "Reading articles…",
+  "Curating relevant content…",
+  "Writing summaries…",
+  "Almost there…",
+];
+
 /* ─── MAIN APP ─── */
 export default function Advantage() {
   const [articles, setArticles] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [summarizing, setSummarizing] = useState(false);
   const [activeFilter, setActiveFilter] = useState("all");
   const [activeIndex, setActiveIndex] = useState(0);
-  const [statusMsg, setStatusMsg] = useState("Fetching feeds…");
+  const [statusMsg, setStatusMsg] = useState(LOADING_MESSAGES[0]);
+  const [loadingStep, setLoadingStep] = useState(0);
+  const [feedCount, setFeedCount] = useState(0);
   const scrollRef = useRef(null);
 
-  /* ── Fetch RSS via our API route ── */
+  /* ── Rotate loading messages ── */
+  useEffect(() => {
+    if (!loading) return;
+    const interval = setInterval(() => {
+      setLoadingStep((prev) => {
+        const next = Math.min(prev + 1, LOADING_MESSAGES.length - 1);
+        setStatusMsg(LOADING_MESSAGES[next]);
+        return next;
+      });
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [loading]);
+
+  /* ── Fetch RSS then curate with Gemini ── */
   useEffect(() => {
     async function load() {
       setLoading(true);
-      setStatusMsg("Fetching feeds…");
 
       try {
-        const resp = await fetch("/api/feeds");
-        const data = await resp.json();
+        // Step 1: Fetch articles from RSS feeds
+        const feedResp = await fetch("/api/feeds");
+        const feedData = await feedResp.json();
 
-        if (data.articles && data.articles.length > 0) {
-          const successFeeds = data.feeds.filter((f) => f.status === "ok");
-          setStatusMsg(`${successFeeds.length} sources loaded`);
-
-          // Set articles with fallback keyword tagging first
-          const tagged = data.articles.map((a) => ({
-            ...a,
-            _topics: tagArticle(a.title, a.description),
-            _summary: truncate(a.description),
-          }));
-          setArticles(tagged);
-          setLoading(false);
-
-          // Then enhance with Gemini in the background
-          enhanceWithGemini(tagged);
-        } else {
+        if (!feedData.articles || feedData.articles.length === 0) {
           setStatusMsg("No articles found — check feed URLs");
+          setLoading(false);
+          return;
+        }
+
+        const successFeeds = feedData.feeds.filter((f) => f.status === "ok");
+        setFeedCount(successFeeds.length);
+
+        // Step 2: Send to Gemini for summarization + relevance check
+        setLoadingStep(2);
+        setStatusMsg(LOADING_MESSAGES[2]);
+
+        const sumResp = await fetch("/api/summarize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            articles: feedData.articles.map((a) => ({
+              title: a.title,
+              description: a.description,
+              source: a.source,
+            })),
+          }),
+        });
+
+        if (!sumResp.ok) {
+          // Gemini failed entirely — show nothing rather than unvetted content
+          setStatusMsg("Could not curate articles — please try again later");
           setArticles([]);
           setLoading(false);
+          return;
         }
+
+        const sumData = await sumResp.json();
+
+        if (!sumData.results || sumData.results.length === 0) {
+          setStatusMsg("No relevant articles found");
+          setArticles([]);
+          setLoading(false);
+          return;
+        }
+
+        // Step 3: Only keep articles that are relevant AND have a summary
+        const curated = [];
+
+        sumData.results.forEach((result) => {
+          if (!result.relevant) return;
+          if (!result.summary || result.summary.trim().length === 0) return;
+
+          const original = feedData.articles[result.originalIndex];
+          if (!original) return;
+
+          const geminiTopics = (result.topics || [])
+            .map((name) =>
+              TOPICS.find(
+                (t) => t.label.toLowerCase() === name.toLowerCase()
+              )
+            )
+            .filter(Boolean);
+
+          curated.push({
+            ...original,
+            _summary: result.summary,
+            _topics: geminiTopics.length > 0 ? geminiTopics : [],
+          });
+        });
+
+        setArticles(curated);
+        setStatusMsg(
+          curated.length > 0
+            ? `${successFeeds.length} sources · AI-curated`
+            : "No relevant articles found"
+        );
       } catch (err) {
-        setStatusMsg("Could not fetch feeds");
+        setStatusMsg("Something went wrong — please refresh");
         setArticles([]);
-        setLoading(false);
       }
+
+      setLoading(false);
     }
 
     load();
   }, []);
-
-  /* ── Gemini enhancement (runs in background) ── */
-  async function enhanceWithGemini(articleList) {
-    setSummarizing(true);
-    try {
-      const resp = await fetch("/api/summarize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          articles: articleList.map((a) => ({
-            title: a.title,
-            description: a.description,
-            source: a.source,
-          })),
-        }),
-      });
-
-      if (!resp.ok) {
-        setSummarizing(false);
-        return;
-      }
-
-      const data = await resp.json();
-
-      if (data.results && data.results.length > 0) {
-        setArticles((prev) =>
-          prev.map((article, idx) => {
-            const enhancement = data.results.find(
-              (r) => r.originalIndex === idx
-            );
-            if (!enhancement) return article;
-
-            const geminiTopics = (enhancement.topics || [])
-              .map((name) =>
-                TOPICS.find(
-                  (t) => t.label.toLowerCase() === name.toLowerCase()
-                )
-              )
-              .filter(Boolean);
-
-            return {
-              ...article,
-              _summary: enhancement.summary || article._summary,
-              _topics:
-                geminiTopics.length > 0 ? geminiTopics : article._topics,
-            };
-          })
-        );
-        setStatusMsg((prev) => prev + " · AI-enhanced");
-      }
-    } catch (err) {
-      // Gemini enhancement is optional — keyword tagging still works
-      console.warn("Gemini enhancement skipped:", err.message);
-    }
-    setSummarizing(false);
-  }
 
   /* ── Filtered articles ── */
   const filtered =
@@ -501,7 +469,6 @@ export default function Advantage() {
           {loading
             ? statusMsg
             : `${filtered.length} article${filtered.length !== 1 ? "s" : ""} · ${statusMsg}`}
-          {summarizing && " · Enhancing with AI…"}
         </span>
       </div>
 
@@ -514,13 +481,13 @@ export default function Advantage() {
             flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
-            gap: "16px",
+            gap: "20px",
           }}
         >
           <div
             style={{
-              width: "32px",
-              height: "32px",
+              width: "36px",
+              height: "36px",
               border: "3px solid #E8E6E1",
               borderTopColor: "#2A6B5E",
               borderRadius: "50%",
@@ -528,7 +495,29 @@ export default function Advantage() {
             }}
           />
           <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-          <p style={{ fontSize: "13px", color: "#8C8780" }}>{statusMsg}</p>
+          <div style={{ textAlign: "center" }}>
+            <p style={{ fontSize: "14px", color: "#4A4640", marginBottom: "4px" }}>
+              {statusMsg}
+            </p>
+            <p style={{ fontSize: "11px", color: "#B0ACA6" }}>
+              This usually takes 5–10 seconds
+            </p>
+          </div>
+          {/* Progress dots */}
+          <div style={{ display: "flex", gap: "8px" }}>
+            {LOADING_MESSAGES.map((_, i) => (
+              <div
+                key={i}
+                style={{
+                  width: "8px",
+                  height: "8px",
+                  borderRadius: "50%",
+                  background: i <= loadingStep ? "#2A6B5E" : "#E8E6E1",
+                  transition: "background 0.3s ease",
+                }}
+              />
+            ))}
+          </div>
         </div>
       ) : filtered.length === 0 ? (
         <div
